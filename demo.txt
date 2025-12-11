@@ -1,0 +1,36 @@
+create a proper way of demo.
+
+create proper curl commands
+
+eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJzYW0uZG9lQGV4YW1wbGUuY29tIiwiaWF0IjoxNzY1NDI0OTc5LCJleHAiOjE3NjU1MTEzNzl9.KyT_jrV_ljBwpbBBTkRxptgoEGAFXSPdH0YSpXylZ-hvnqw7iFw3G0vw-yIHIJdROLVEfE7OsyJVhZabZ26mGg"
+
+why bearer
+
+eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkBleGFtcGxlLmNvbSIsImlhdCI6MTc2NTQyODk5NCwiZXhwIjoxNzY1NTE1Mzk0fQ.XctuwuF1hj5y8Z7RspGkjOMrSVL1RYmyk8ptzig_Du1KjJjqhmtdPTt0Kw-CPHTeX0PsVh4GN-GHasqIECY-8w
+
+
+Hi, I’m [your name]. Today I’ll demo OrderFlow, a simple order management REST API built with Spring Boot.
+> The goal is to manage customer orders securely with JWT authentication, persist them in MySQL, and send asynchronous notifications through RabbitMQ.
+
+Tech stack:
+“Backend is Java 21 and Spring Boot 3.5.8.”
+“Database is MySQL 8.”
+“For messaging we use RabbitMQ for order events.”
+“Security is JWT using JJWT library.”
+“Everything runs in Docker Compose: app, MySQL, RabbitMQ, and MailHog for emails.”
+
+“It’s a classic layered Spring Boot app:
+Controllers expose REST endpoints (/api/auth, /api/orders, /api/admin).
+Services handle business logic like creating orders and changing status.
+Repositories talk to the database.
+When something important happens, like an order being created, we publish an event to RabbitMQ, and we also log notifications that admin users can see.”
+
+architecture diagram 
+
+Show your terminal with docker-compose already running.
+
+“The app is running inside Docker, and it’s listening on port 8080.
+> MySQL, RabbitMQ, and MailHog are also up as part of the same docker-compose stack.”
+
+postman commands
+address all endpoints

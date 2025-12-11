@@ -1,0 +1,267 @@
+same customer id has incremented -if customer id is not provided save it as a new user
+
+## 6. Implementation Details - From Start to Finish
+
+### **Phase 1: Project Setup**
+
+**What We Did**:
+1. Created Spring Boot project using Spring Initializr (or manually)
+2. Added dependencies in `pom.xml`:
+   - Spring Web (for REST API)
+   - Spring Security (for authentication)
+   - Spring Data JPA (for database)
+   - Spring AMQP (for RabbitMQ)
+   - MySQL Driver (to connect to MySQL)
+   - JWT library (jjwt)
+   - BCrypt (included in Spring Security)
+
+**Key File**: `pom.xml` - This file lists all libraries we need. Maven downloads them automatically.
+
+### **Phase 2: Database Design**
+
+**What We Created**:
+1. **User Entity** (`User.java`):
+   - id, email, password (hashed), fullName, role (USER/ADMIN)
+   - Represents system users (employees who use the system)
+
+2. **Customer Entity** (`Customer.java`):
+   - id, name, email, phone
+   - Represents customers who place orders
+
+3. **Order Entity** (`Order.java`):
+   - id, customer (link), createdByUser (link), status, totalAmount
+   - Has relationship: One Order has many OrderItems
+
+4. **OrderItem Entity** (`OrderItem.java`):
+   - id, order (link), productName, quantity, unitPrice
+   - Represents individual items in an order
+
+5. **NotificationLog Entity** (`NotificationLog.java`):
+   - id, eventType, orderId, payload (JSON), status, createdAt
+   - Logs all notification events
+
+**How JPA Works**:
+- We define classes with `@Entity` annotation
+- Spring automatically creates database tables based on these classes
+- We use `@ManyToOne`, `@OneToMany` to define relationships
+- Hibernate (JPA implementation) generates SQL automatically
+
+**Example**:
+@Entity
+public class Order {
+    @Id
+    @GeneratedValue
+    private Long id;
+    
+    @ManyToOne  // Many orders belong to one customer
+    private Customer customer;
+    
+    @OneToMany(mappedBy = "order")  // One order has many items
+    private List<OrderItem> items;
+}This automatically creates SQL tables with foreign keys!
+
+### **Phase 3: Repository Layer**
+
+**What We Created**:
+- **UserRepository** extends `JpaRepository<User, Long>`
+- **OrderRepository** extends `JpaRepository<Order, Long>`
+- **CustomerRepository** extends `JpaRepository<Customer, Long>`
+- **NotificationLogRepository** extends `JpaRepository<NotificationLog, Long>`
+
+**How It Works**:
+- Spring Data JPA provides methods automatically: `save()`, `findById()`, `findAll()`, `delete()`
+- We can write custom methods using naming conventions: `findByEmail()` automatically becomes SQL query
+- No SQL code needed!
+
+**Example**:
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);  // Spring generates SQL automatically!
+}### **Phase 4: DTOs (Data Transfer Objects)**
+
+**Why DTOs?**
+- We don't want to expose our internal database structure
+- We might need different data formats for API vs database
+- Security: Don't send password hashes to clients
+
+**What We Created**:
+- **RegisterRequest**: What client sends when registering (email, password, fullName)
+- **LoginRequest**: What client sends when logging in
+- **LoginResponse**: What we send back (token, expiresIn)
+- **CreateOrderRequest**: What client sends to create order
+- **OrderResponse**: What we send back (order details, without internal fields)
+- **OrderCreatedEvent**: Event sent to RabbitMQ
+- **OrderStatusChangedEvent**: Event sent to RabbitMQ
+
+**Example**:
+public class OrderResponse {
+    private Long id;
+    private String customerName;
+    private BigDecimal totalAmount;
+    private OrderStatus status;
+    // Only fields we want to expose!
+}### **Phase 5: Security Implementation**
+
+**What We Built**:
+
+1. **JwtService** (`JwtService.java`):
+   - `generateToken(User user)`: Creates JWT token with user email and role
+   - `extractUsername(String token)`: Gets email from token
+   - `validateToken(String token)`: Checks if token is valid and not expired
+   - Uses secret key (stored in application.properties)
+
+2. **CustomUserDetailsService**:
+   - Implements Spring's UserDetailsService
+   - Loads user from database when authentication is needed
+   - Spring Security uses this to verify users
+
+3. **JwtAuthenticationFilter**:
+   - Runs BEFORE every request (except public endpoints)
+   - Extracts JWT from `Authorization: Bearer <token>` header
+   - Validates token
+   - Loads user and sets in SecurityContext
+   - If token invalid, request is rejected
+
+4. **SecurityConfig**:
+   - Configures Spring Security
+   - Says: "/api/auth/**" is public (no authentication needed)
+   - Says: "/api/admin/**" requires ADMIN role
+   - Says: Everything else requires authentication
+   - Disables CSRF (not needed for stateless JWT)
+   - Sets session policy to STATELESS (no server-side sessions)
+
+**How JWT Works**:
+1. User logs in → Gets token: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+2. Token contains: email, role, expiration time (encrypted with secret key)
+3. Client sends token in header: `Authorization: Bearer <token>`
+4. Server validates token → If valid, extracts user info
+5. User is "authenticated" for that request
+
+### **Phase 6: Service Layer (Business Logic)**
+
+**What Each Service Does**:
+
+#### **AuthService**:
+- `register()`: Creates new user, hashes password, saves to database
+- `login()`: Verifies credentials, generates JWT token
+
+#### **OrderService**:
+- `createOrder()`: 
+  - Creates/finds customer
+  - Creates order with items
+  - Calculates total
+  - Saves to database
+  - Publishes ORDER_CREATED event to RabbitMQ
+- `updateOrderStatus()`:
+  - Updates order status
+  - Checks authorization
+  - Publishes ORDER_STATUS_CHANGED event
+- `getOrderById()`: Retrieves order, checks permissions
+- `getMyOrders()`: Gets orders for logged-in user only
+
+**Key Concept - Transactions**:
+- `@Transactional` annotation ensures all database operations succeed or fail together
+- Example: If saving order fails, customer creation is rolled back
+- Ensures data consistency
+
+### **Phase 7: RabbitMQ Integration**
+
+**What We Built**:
+
+1. **RabbitMQConfig** (`RabbitMQConfig.java`):
+   - Creates Exchange: "order.events" (Direct type)
+   - Creates Queue: "order.notifications" (durable - survives restart)
+   - Creates Bindings: Connects queue to exchange with routing keys
+   - Configures JSON message converter (so we can send Java objects as JSON)
+
+2. **Publishing Events** (in OrderService):
+   - When order created: `rabbitTemplate.convertAndSend("order.events", "order.created", event)`
+   - When status changed: `rabbitTemplate.convertAndSend("order.events", "order.status.changed", event)`
+   - This is ASYNCHRONOUS - doesn't wait for consumer
+
+3. **OrderNotificationConsumer**:
+   - Listens to queue: `@RabbitListener(queues = "order.notifications")`
+   - When message arrives, `handleOrderNotification()` is called
+   - Determines event type (ORDER_CREATED vs ORDER_STATUS_CHANGED)
+   - Sends email via JavaMailSender
+   - Saves notification log to database
+
+**Why Async?**
+- Order creation responds immediately (fast!)
+- Email sending happens in background (can take time)
+- If email fails, order still saved
+- System stays responsive
+
+### **Phase 8: Controller Layer**
+
+**What Each Controller Does**:
+
+#### **AuthController**:
+- `POST /api/auth/register`: Public endpoint, calls AuthService.register()
+- `POST /api/auth/login`: Public endpoint, calls AuthService.login()
+
+#### **OrderController**:
+- `POST /api/orders`: Requires authentication, creates order
+- `GET /api/orders/{id}`: Requires authentication, gets order (with permission check)
+- `GET /api/orders/my`: Requires authentication, gets user's orders
+- `PATCH /api/orders/{id}/status`: Requires authentication, updates status
+
+#### **UserController**:
+- `GET /api/users/me`: Returns current logged-in user info
+
+#### **AdminController**:
+- `GET /api/admin/users`: Requires ADMIN role, lists all users
+- `GET /api/admin/orders`: Requires ADMIN role, lists all orders
+- `GET /api/admin/notifications`: Requires ADMIN role, lists notification logs
+
+**Key Concepts**:
+- `@RestController`: Marks class as REST API controller
+- `@RequestMapping("/api/orders")`: Base path for all methods
+- `@PostMapping`, `@GetMapping`, `@PatchMapping`: HTTP method
+- `@Valid`: Validates request body automatically
+- `Authentication`: Spring injects current user automatically
+
+### **Phase 9: Exception Handling**
+
+**GlobalExceptionHandler**:
+- Catches all exceptions thrown anywhere in application
+- Converts exceptions to user-friendly error responses
+- Returns proper HTTP status codes
+- Prevents exposing internal errors to clients
+
+### **Phase 10: Docker Setup**
+
+**What We Created**:
+
+1. **Dockerfile**:
+   - Multi-stage build (smaller final image)
+   - Stage 1: Build JAR using Maven
+   - Stage 2: Run JAR using lightweight JRE
+   - Exposes port 8080
+
+2. **docker-compose.yml**:
+   - Defines 4 services:
+     - **db**: MySQL 8.0 container
+     - **rabbitmq**: RabbitMQ with management UI
+     - **mailhog**: Fake email server (for testing emails)
+     - **app**: Our Spring Boot application
+   - Sets up networking (all services can talk to each other)
+   - Configures health checks (app waits for DB and RabbitMQ to be ready)
+   - Sets environment variables
+
+**Why Docker?**
+- One command to start everything: `docker-compose up`
+- Same environment everywhere (development, testing, production)
+- No "it works on my machine" problems
+
+---
+
+## 7. Complete Request Flow Examples
+
+### **Example 1: User Registration**
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+i have 3 spring boot projects order-service, inventory-service and notification-service. i only have implemented the order service which is this project with mongodb database. need to update other projects acordingly i copied the order service and changed the name to  inventory-service and notification-service.so now those need to be implemented 1st. when orders are placed  then inventory should be reduce acordingly and notification service should notify  about both services . i need to learn microservices using them step 1 start implementng the  inventory-service and notification-service accordingly. implement all the controllers, services, models and repos.and step 2 should be adding kafka to communicate with each other. step 3 should be event driven architecture and step 4 should be containerization/docker. i dont know any so lets start by step 1. give all the steps 1 by 1

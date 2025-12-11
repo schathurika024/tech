@@ -1,0 +1,11 @@
+@SpringBootApplication which sets up component scanning and autoconfiguration.
+
+Inversion of Control means you don’t create objects yourself — Spring creates them and gives them to you.IoC means Spring is in charge of creating and giving you the objects your application needs, instead of you creating them manually.
+
+Dependency Injection means a class gets the objects it needs from Spring instead of creating them itself.
+
+DI means Spring gives your class the required objects (dependencies) instead of your class creating them.
+
+@Autowired automatically injects the required dependency into your class so you don’t have to create it yourself.
+
+

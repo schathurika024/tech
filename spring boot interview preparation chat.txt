@@ -1,0 +1,17 @@
+public class overlapping{
+public int[][] merge(int[][] intervals){
+if (intervals==null||intervals.length==0){
+
+return new int[0][];
+
+}
+
+if(intervals.length==1){
+returns intervals;
+}
+
+Arrays.sort(intervals,(a,b ->Integer.compare(a[0],b[0]));
+
+}
+
+}

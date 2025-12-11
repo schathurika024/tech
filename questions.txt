@@ -1,0 +1,96 @@
+check the models:
+order class is bit complicated. 
+
+
+there are notification log and user classes which was not mentioned in the models in assignment
+
+what is in dto class. 
+
+consumer is there where is the producer
+
+RabbitMQ
+
+1.
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+ 	curl -X PATCH http://localhost:8080/api/orders/1/status \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTc2NTAxMTA5NCwiZXhwIjoxNzY1MDk3NDk0fQ.tWea0bI0LjPlHm5CjxX4b6F3ljXHdK4UaZH6q8eT4X4aI1oOGauxH_NaqF9SQyIa5NlZwnv2Q9l2WUyiRnrN3Q" \
+  -d '{
+    "status": "NEW"
+  }'
+
+
+The system is channel-agnostic (REST API), so it works across channels. Here’s how to confirm it works across web, mobile, and resellers:
+Current architecture
+The API is channel-agnostic:
+REST endpoints work for any client
+JWT authentication works across channels
+
+why  Application Layer: Spring Boot REST API
+
+///////////////////////////////////////////////////////////
+ Saves Order to database (this also saves OrderItems due to cascade)
+   - **Publishes event to RabbitMQ** (ORDER_CREATED)
+   - Returns OrderResponse
+5. **In Background** (asynchronously):
+   - RabbitMQ receives the event
+   - **OrderNotificationConsumer** picks up the message
+   - Consumer sends email to customer
+   - Consumer logs notification to database
+
+(→ return OrderResponse
+[ASYNC - Happens in Background]
+RabbitMQ Queue
+→ OrderNotificationConsumer.handleOrderNotification()
+→ Send email (via JavaMailSender)
+→ notificationLogRepository.save() // Log it)
+
+
+. **Dockerfile**:
+   - Multi-stage build (smaller final image)
+   - Stage 1: Build JAR using Maven
+   - Stage 2: Run JAR using lightweight JRE
+   - Exposes port 8080
+
+2. **docker-compose.yml**:
+   - Defines 4 services:
+     - **db**: MySQL 8.0 container
+     - **rabbitmq**: RabbitMQ with management UI
+     - **mailhog**: Fake email server (for testing emails)
+     - **app**: Our Spring Boot application
+   - Sets up networking (all services can talk to each other)
+   - Configures health checks (app waits for DB and RabbitMQ to be ready)
+   - Sets environment variables
+
+
+////////////////////////////////////////////
+
+
+
+
+
+order
+
+@OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderItem> items = new ArrayList<>();
+
+public void calculateTotalAmount() {
+        this.totalAmount = items.stream()
+                .map(item -> item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+///////////////////
+orderrepository
+//////////////////////////
+Pageable pageable
+//////////////////////////
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+    boolean existsByEmail(String email);
+    Page<User> findAll(Pageable pageable);
+///////////////////////////////////////////////
+LoginResponse
+////////////////
+ JwtService
